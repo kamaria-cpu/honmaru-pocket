@@ -284,10 +284,15 @@ function buildAppGrid(){
     let all=[...order,...apps.map(a=>a[0]).filter(x=>!order.includes(x))];
     let pages=[];for(let i=0;i<all.length;i+=12)pages.push(all.slice(i,i+12));
     if(!pages.length)pages=[[]];appearance.pages=pages;saveAppearance();
+  } else {
+    // 防御旧备份中的无效页结构；保留所有可识别应用，避免渲染时抛错。
+    appearance.pages=appearance.pages.filter(Array.isArray).map(p=>p.filter(k=>map.has(k)));
+    if(!appearance.pages.length)appearance.pages=[[]];
   }
-  if(appearance.hiddenApps&&appearance.hiddenApps.length)appearance.pages=appearance.pages.map(p=>p.filter(k=>!appearance.hiddenApps.includes(k)));
-  let page=Math.max(0,Math.min(appearance.page||0,appearance.pages.length-1));appearance.page=page;
-  let list=(appearance.pages[page]||[]).map(id=>map.get(id)).filter(Boolean);
+  // 隐藏应用只影响渲染，不改写持久化 pages，避免隐藏后丢失原来的分页/排序。
+  const hidden=new Set(appearance.hiddenApps||[]);
+  let page=Math.max(0,Math.min(Number(appearance.page)||0,appearance.pages.length-1));appearance.page=page;
+  let list=(appearance.pages[page]||[]).filter(id=>!hidden.has(id)).map(id=>map.get(id)).filter(Boolean);
   let grid=document.getElementById("appGrid");
   grid.innerHTML=list.map(a=>`<button class="app-icon" data-app="${a[0]}" draggable="false" onclick="appIconClick(event,'${a[0]}')"><span class="icon-box">${a[2]}</span><span>${a[1]}</span></button>`).join("");
   document.getElementById("desktopPages").innerHTML=appearance.pages.map((_,i)=>`<button class="page-dot ${i===page?'active':''}" aria-label="第${i+1}页" onclick="setDesktopPage(${i})"></button>`).join("");
@@ -486,8 +491,8 @@ function openShareSheet(title='分享',preview='选择分享方式'){document.ge
 function closeShareSheet(){document.getElementById('shareSheet').classList.remove('open')}
 function shareAction(action){if(action==='拷贝'){navigator.clipboard?.writeText(document.getElementById('sharePreview').textContent).then(()=>toast('已拷贝')).catch(()=>toast('浏览器未授予剪贴板权限'))}else toast(action+'：网页模拟操作');closeShareSheet()}
 function findAppInPages(id){for(let i=0;i<(appearance.pages||[]).length;i++){let j=appearance.pages[i].indexOf(id);if(j>=0)return{page:i,idx:j}}return null}
-function moveAppToPage(appId,pageIdx){let loc=findAppInPages(appId);if(!loc)return;appearance.pages[loc.page].splice(loc.idx,1);if(!appearance.pages[pageIdx])appearance.pages[pageIdx]=[];if(!appearance.pages[pageIdx].includes(appId))appearance.pages[pageIdx].push(appId);saveAppearance()}
-function reorderAppTouch(from,to){if(!from||!to||from===to)return;let fp=findAppInPages(from);if(!fp)return;appearance.pages[fp.page].splice(fp.idx,1);let tp=findAppInPages(to);if(!tp)return;appearance.pages[tp.page].splice(tp.idx,0,from);saveAppearance();buildAppGrid()}
+function moveAppToPage(appId,pageIdx){let loc=findAppInPages(appId);if(!loc||!Number.isInteger(pageIdx)||pageIdx<0||pageIdx>Math.max(appearance.pages.length,0))return false;if(pageIdx===loc.page)return true;const target=appearance.pages[pageIdx];if(target&&target.includes(appId))return false;appearance.pages[loc.page].splice(loc.idx,1);if(!appearance.pages[pageIdx])appearance.pages[pageIdx]=[];appearance.pages[pageIdx].push(appId);saveAppearance();return true}
+function reorderAppTouch(from,to){if(!from||!to||from===to)return;const fp=findAppInPages(from),tp=findAppInPages(to);if(!fp||!tp||fp.page!==tp.page)return;const page=appearance.pages[fp.page];page.splice(fp.idx,1);const next=page.indexOf(to);if(next<0){page.splice(fp.idx,0,from);return}page.splice(next,0,from);saveAppearance();buildAppGrid()}
 function showTodayView(){let el=document.getElementById('todayView');el.classList.add('show');let grid=document.getElementById('todayGrid');grid.innerHTML='<div class="today-widget"><strong>本丸时钟</strong><div style="font-size:28px;margin-top:12px">'+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false})+'</div></div><div class="today-widget"><strong>刀剑男士</strong><p>'+esc(currentName())+'</p></div><div class="today-widget medium"><strong>万叶集预览</strong><p>'+esc(state.messages.slice(-1)[0]?.content||'还没有新的消息')+'</p></div><div class="today-widget medium"><strong>今日手札</strong><p>'+esc(state.diaries.find(d=>d.date===today())?.text||'今天还没有写手札')+'</p></div><div class="today-widget large"><strong>现世远征</strong><p>'+esc(state.expedition?.place||'暂无远征')+'</p></div>'}
 window.addEventListener('DOMContentLoaded',()=>{syncStatus();managedInterval(syncStatus,1000);setupSystemGestures();document.getElementById('phone').addEventListener('pointerdown',e=>{if(!e.target.closest('#shareSheet')&&document.getElementById('shareSheet').classList.contains('open')&&e.clientY<document.getElementById('shareSheet').getBoundingClientRect().top)closeShareSheet()});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeSpotlight();closeAppSwitcher();closeShareSheet()}})});
 
